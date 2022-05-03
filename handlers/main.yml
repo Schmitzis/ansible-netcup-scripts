@@ -1,0 +1,12 @@
+# handlers file
+---
+- name: start keepalived_watcher
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  with_items:
+    - keepalived_watcher
+  when:
+    - hostvars[inventory_hostname].netcup_routed_ip or hostvars[inventory_hostname].netcup_routed_ip6 is defined
+    - ansible_distribution == "Debian"

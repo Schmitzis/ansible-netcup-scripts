@@ -1,0 +1,10 @@
+---
+- include_tasks: "facts.yml"
+
+- include_tasks: "scripts.yml"
+
+- include_tasks: "watcher.yml"
+  when: keepalived_watcher
+
+- include_tasks: "netcup.yml"
+  when: ansible_system_vendor == "netcup"

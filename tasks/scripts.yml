@@ -1,0 +1,23 @@
+---
+- name: Ensures /etc/keepalived dir exists
+  ansible.builtin.file:
+    path: /etc/keepalived
+    state: directory
+    mode: 0644
+
+- name: Configure keepalived Notification Script
+  ansible.builtin.copy:
+    src: "./templates/{{ item }}"
+    dest: "/etc/keepalived/{{ item }}"
+    owner: root
+    group: root
+    mode: 0755
+    force: true
+  with_items:
+    - keepalived_notifications.sh
+  when:
+    - ansible_os_family == "Debian"
+    - keepalived_options is defined
+  tags:
+    - floating_ips
+    - network

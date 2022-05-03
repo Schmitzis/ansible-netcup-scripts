@@ -1,0 +1,19 @@
+; {{ ansible_managed }}
+
+[Unit]
+Description=Keepalived_Watcher
+After=network-online.target keepalived.service
+Wants=network-online.target keepalived.service
+Requires=keepalived.service
+ConditionFileNotEmpty=/tmp/keepalived.status
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/etc/keepalived/keepalived_watcher.sh
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=keepalived.service

@@ -1,0 +1,22 @@
+---
+- name: Configure Keepalived Netcup SOAP Scripts
+  ansible.builtin.template:
+    src: "netcup/{{ item }}.j2"
+    dest: "/etc/keepalived/{{ item }}"
+    owner: root
+    group: root
+    mode: 0755
+    force: true
+    lstrip_blocks: yes
+    trim_blocks: yes
+  no_log: true
+  register: template_results
+  when:
+    - ansible_os_family == "Debian"
+    - netcup_password is defined
+  with_items:
+    - keepalived_master.sh
+  tags:
+    - floating_ips
+    - network
+    - failover

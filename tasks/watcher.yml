@@ -1,0 +1,46 @@
+---
+- name: Configure Netcup Keepalived Watcher Script
+  ansible.builtin.template:
+    src: "netcup/{{ item }}.j2"
+    dest: "/etc/keepalived/{{ item }}"
+    owner: root
+    group: root
+    mode: 0755
+    force: true
+    lstrip_blocks: yes
+    trim_blocks: yes
+  #no_log: true
+  register: template_results
+  when:
+    - ansible_os_family == "Debian"
+    - ansible_system_vendor == "netcup"
+  with_items:
+    - keepalived_watcher.sh
+  tags:
+    - floating_ips
+    - network
+    - failover
+
+- name: service | systemd | watcher script
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+    mode: 0644
+  register: _update_systemd_script
+  with_items:
+    - etc/systemd/system/keepalived_watcher.service
+  notify: start keepalived_watcher
+  when:
+    - hostvars[inventory_hostname].netcup_routed_ip or hostvars[inventory_hostname].netcup_routed_ip6 is defined
+    - ansible_os_family == "Debian"
+
+- name: service | systemd | reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - _update_systemd_script is changed
+    - ansible_os_family == "Debian"
+  tags:
+    - skip_ansible_lint

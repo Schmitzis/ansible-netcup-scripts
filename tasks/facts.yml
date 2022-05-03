@@ -1,0 +1,38 @@
+---
+- name: set Netcup IPv4 Failover fact
+  ansible.builtin.set_fact:
+    netcup_routed_ip: "{{ netcup_routed_ip | default([]) }}"
+
+- name: set Netcup IPv6 Failover fact
+  ansible.builtin.set_fact:
+    netcup_routed_ip6: "{{ netcup_routed_ip6 | default([]) }}"
+
+- name: find vServer_ID
+  ansible.builtin.command: cat /sys/devices/virtual/dmi/id/product_family
+  register: netcup_vserver_id
+  when: ansible_system_vendor == 'netcup'
+  changed_when:
+    - '"ERROR" in netcup_vserver_id.stderr'
+    - netcup_vserver_id.rc == 2
+  tags:
+    - floating_ips
+    - network
+    - failover
+
+- name: set vServer_ID fact
+  ansible.builtin.set_fact:
+    vserver_id: "{{ netcup_vserver_id.stdout }}"
+  when: ansible_system_vendor == 'netcup'
+  tags:
+    - floating_ips
+    - network
+    - failover
+
+- name: set vServer_MAC fact
+  ansible.builtin.set_fact:
+    vserver_mac: "{{ hostvars[inventory_hostname].ansible_default_ipv4.macaddress | replace(' ','') }}"
+  when: ansible_system_vendor == 'netcup'
+  tags:
+    - floating_ips
+    - network
+    - failover

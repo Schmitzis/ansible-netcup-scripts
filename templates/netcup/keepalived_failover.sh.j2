@@ -1,0 +1,91 @@
+#!/bin/bash
+# set -eux
+set -eu
+
+# Colors
+Black='\033[0;30m'        # Black
+Red='\033[0;31m'          # Red
+Green='\033[0;32m'        # Green
+Yellow='\033[0;33m'       # Yellow
+Blue='\033[0;34m'         # Blue
+Purple='\033[0;35m'       # Purple
+Cyan='\033[0;36m'     # Cyan
+White='\033[0;37m'     # Cyan
+NC='\033[0m' # No Color
+
+# Netcup URLs
+# https://www.netcup-wiki.de/wiki/Netcup_SCP_Webservice
+domain="www.servercontrolpanel.de"
+wsdl="https://www.servercontrolpanel.de/WSEndUser?wsdl"
+api="https://www.servercontrolpanel.de/WSEndUser"
+backup="BACKUP"
+master="MASTER"
+keepalived_status="/tmp/keepalived.status"
+KEEPALIVE_PROCS=$(ps uax|grep '/usr/local/sbin/keepalived'|grep -v grep|wc -l|tr -d "\n")
+
+SERVER_LIST='<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://enduser.service.web.vcp.netcup.de/"><SOAP-ENV:Body><ns1:getVServers><loginName>{{ netcup_login_name }}</loginName><password>{{ netcup_password }}</password></ns1:getVServers></SOAP-ENV:Body></SOAP-ENV:Envelope>'
+IPV4_FAILOVER='<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://enduser.service.web.vcp.netcup.de/"><SOAP-ENV:Body><ns1:changeIPRouting><loginName>{{ netcup_login_name }}</loginName><password>{{ netcup_password }}</password><routedIP>{{ netcup_routed_ip }}</routedIP><routedMask>32</routedMask><destinationVserverName>{{ vserver_id }}</destinationVserverName><destinationInterfaceMAC>{{ vserver_mac }}</destinationInterfaceMAC></ns1:changeIPRouting></SOAP-ENV:Body></SOAP-ENV:Envelope>'
+IPV6_FAILOVER='<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://enduser.service.web.vcp.netcup.de/"><SOAP-ENV:Body><ns1:changeIPRouting><loginName>{{ netcup_login_name }}</loginName><password>{{ netcup_password }}</password><routedIP>{{ netcup_routed_ip6 }}</routedIP><routedMask>64</routedMask> <destinationVserverName>{{ vserver_id }}</destinationVserverName><destinationInterfaceMAC>{{ vserver_mac }}</destinationInterfaceMAC></ns1:changeIPRouting></SOAP-ENV:Body></SOAP-ENV:Envelope>'
+IP_FAILOVER_CHECK='<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://enduser.service.web.vcp.netcup.de/"><SOAP-ENV:Body><ns1:getVServerIPs><loginName>{{ netcup_login_name }}</loginName><password>{{ netcup_password }}</password><vserverName>{{ vserver_id }}</vserverName></ns1:getVServerIPs></SOAP-ENV:Body></SOAP-ENV:Envelope>'
+
+# Failover Process
+# StatusCode 200 indicates operation has been triggered
+# StatusCode 500 indicates operation isn't available, cause IP might be already switched
+
+# Execute SOAP Action getVServers to check reachability
+check-api() {
+  curl -s -o /dev/null -w '%{http_code}' -m 10 -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction:' -d '${SERVER_LIST}' -X POST ${api}
+}
+
+wait-for-api() {
+  while true
+  do
+    STATUS=$(check-api)
+    if [ "$STATUS" -eq 200 ]; then
+      echo -e "API Check: ✓ Netcup API is reachable!"
+      break
+    else
+      echo -e "API Check: ✗ Got $STATUS :( Not done yet..."
+    fi
+    sleep 10
+  done
+}
+
+main() {
+  while true
+  do
+    inotifywait $keepalived_status
+    if grep -q "$master" "$keepalived_status" && [[ $KEEPALIVE_PROCS -gt 0 ]]; then
+      wait-for-api
+      CHECK_RESULT=$(curl --connect-timeout 5 --max-time 10 --retry 5 --retry-delay 0 --retry-max-time 30 -s -H "Content-Type: text/xml; charset=utf-8" -H "SOAPAction:" -d "$IP_FAILOVER_CHECK" -X POST ${api})
+{% if netcup_routed_ip|length %}
+      FAILOVER_IP4_ACTIVE=$(echo $CHECK_RESULT | grep -o -i {{ netcup_routed_ip }} | wc -l)
+{% else %}
+      FAILOVER_IP4_ACTIVE=1
+{% endif %}
+{% if netcup_routed_ip6|length %}
+      FAILOVER_IP6_ACTIVE=$(echo $CHECK_RESULT | grep -o -i {{ netcup_routed_ip6 }} | wc -l)
+{% else %}
+      FAILOVER_IP6_ACTIVE=1
+{% endif %}
+      if [[ $FAILOVER_IP4_ACTIVE -ne 1 ]] || [[ $FAILOVER_IP6_ACTIVE -ne 1 ]]; then
+{% if netcup_routed_ip|length %}
+        echo -e "FailoverIPv4: ☐ Change FailoverIPv4 Routing to {{ netcup_routed_ip }}${NC}"
+        time curl -m 20 -s -o /dev/null -w '%{http_code}' -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction:' -d "$IPV4_FAILOVER" -X POST ${api}
+{% endif %}
+{% if netcup_routed_ip6|length %}
+        echo -e "FailoverIPv6: ☐ Change FailoverIPv6 Routing to {{ netcup_routed_ip6 }}${NC}"
+        time curl -m 20 -s -o /dev/null -w '%{http_code}' -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction:' -d "$IPV6_FAILOVER" -X POST ${api}
+{% endif %}
+      else
+        echo -e "FailoverIP: ☑ Node has already requested IPs"
+      fi
+    elif grep -q "$backup" "$keepalived_status"; then
+      echo -e "DeadManSwitch: ☑ Node is not in master state"
+    else
+      echo -e "Panic: errors occured!"
+    fi
+  done
+}
+
+main
