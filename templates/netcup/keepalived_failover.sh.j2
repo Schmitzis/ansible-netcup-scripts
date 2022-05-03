@@ -58,22 +58,22 @@ main() {
     if grep -q "$master" "$keepalived_status" && [[ $KEEPALIVE_PROCS -gt 0 ]]; then
       wait-for-api
       CHECK_RESULT=$(curl --connect-timeout 5 --max-time 10 --retry 5 --retry-delay 0 --retry-max-time 30 -s -H "Content-Type: text/xml; charset=utf-8" -H "SOAPAction:" -d "$IP_FAILOVER_CHECK" -X POST ${api})
-{% if netcup_routed_ip|length %}
+{% if netcup_routed_ip|length>0 %}
       FAILOVER_IP4_ACTIVE=$(echo $CHECK_RESULT | grep -o -i {{ netcup_routed_ip }} | wc -l)
 {% else %}
       FAILOVER_IP4_ACTIVE=1
 {% endif %}
-{% if netcup_routed_ip6|length %}
+{% if netcup_routed_ip6|length>0 %}
       FAILOVER_IP6_ACTIVE=$(echo $CHECK_RESULT | grep -o -i {{ netcup_routed_ip6 }} | wc -l)
 {% else %}
       FAILOVER_IP6_ACTIVE=1
 {% endif %}
       if [[ $FAILOVER_IP4_ACTIVE -ne 1 ]] || [[ $FAILOVER_IP6_ACTIVE -ne 1 ]]; then
-{% if netcup_routed_ip|length %}
+{% if netcup_routed_ip|length>0 %}
         echo -e "FailoverIPv4: ☐ Change FailoverIPv4 Routing to {{ netcup_routed_ip }}${NC}"
         time curl -m 20 -s -o /dev/null -w '%{http_code}' -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction:' -d "$IPV4_FAILOVER" -X POST ${api}
 {% endif %}
-{% if netcup_routed_ip6|length %}
+{% if netcup_routed_ip6|length>0 %}
         echo -e "FailoverIPv6: ☐ Change FailoverIPv6 Routing to {{ netcup_routed_ip6 }}${NC}"
         time curl -m 20 -s -o /dev/null -w '%{http_code}' -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction:' -d "$IPV6_FAILOVER" -X POST ${api}
 {% endif %}
